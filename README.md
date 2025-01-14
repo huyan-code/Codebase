@@ -31,8 +31,10 @@ class HTTPClient {
         method: HTTPMethod = .get,
         parameters: Parameters? = nil,
         headers: HTTPHeaders? = nil,
-        interceptor: RequestInterceptor? = nil
-    ) -> DataRequest {
+        interceptor: RequestInterceptor? = nil,
+        onProgress: ((Double) -> Void)? = nil, // Progress handler
+        onComplete: @escaping (Result<Data?, AFError>) -> Void // Completion handler
+    ) {
         let request = session.request(
             url,
             method: method,
@@ -42,53 +44,63 @@ class HTTPClient {
             interceptor: interceptor
         )
         
-        // Add lifecycle monitoring if needed
-        monitorRequestLifecycle(request)
-        
-        return request
+        // Monitor progress and completion
+        request.downloadProgress { progress in
+            onProgress?(progress.fractionCompleted)
+        }
+        .response { response in
+            if let error = response.error {
+                onComplete(.failure(error))
+            } else {
+                onComplete(.success(response.data))
+            }
+        }
     }
     
     func upload(
         _ url: String,
         fileURL: URL,
         headers: HTTPHeaders? = nil,
-        interceptor: RequestInterceptor? = nil
-    ) -> UploadRequest {
+        interceptor: RequestInterceptor? = nil,
+        onProgress: ((Double) -> Void)? = nil, // Progress handler
+        onComplete: @escaping (Result<Data?, AFError>) -> Void // Completion handler
+    ) {
         let uploadRequest = session.upload(fileURL, to: url, headers: headers, interceptor: interceptor)
         
-        // Add lifecycle monitoring if needed
-        monitorRequestLifecycle(uploadRequest)
-        
-        return uploadRequest
+        // Monitor progress and completion
+        uploadRequest.uploadProgress { progress in
+            onProgress?(progress.fractionCompleted)
+        }
+        .response { response in
+            if let error = response.error {
+                onComplete(.failure(error))
+            } else {
+                onComplete(.success(response.data))
+            }
+        }
     }
     
     func download(
         _ url: String,
         to destination: DownloadRequest.Destination? = nil,
         headers: HTTPHeaders? = nil,
-        interceptor: RequestInterceptor? = nil
-    ) -> DownloadRequest {
+        interceptor: RequestInterceptor? = nil,
+        onProgress: ((Double) -> Void)? = nil, // Progress handler
+        onComplete: @escaping (Result<URL?, AFError>) -> Void // Completion handler
+    ) {
         let downloadRequest = session.download(url, to: destination, headers: headers, interceptor: interceptor)
         
-        // Add lifecycle monitoring if needed
-        monitorRequestLifecycle(downloadRequest)
-        
-        return downloadRequest
-    }
-    
-    // MARK: - Private Methods
-    private func monitorRequestLifecycle(_ request: Request) {
-        request
-            .response { response in
-                print("Request completed: \(response.request?.url?.absoluteString ?? "Unknown URL")")
+        // Monitor progress and completion
+        downloadRequest.downloadProgress { progress in
+            onProgress?(progress.fractionCompleted)
+        }
+        .responseURL { response in
+            if let error = response.error {
+                onComplete(.failure(error))
+            } else {
+                onComplete(.success(response.fileURL))
             }
-            .responseJSON { response in
-                if let error = response.error {
-                    print("Request failed: \(error.localizedDescription)")
-                } else {
-                    print("Request succeeded with response: \(response)")
-                }
-            }
+        }
     }
 }
 
@@ -124,3 +136,4 @@ class SessionDelegate: Alamofire.SessionDelegate {
         completionHandler(.performDefaultHandling, nil)
     }
 }
+
